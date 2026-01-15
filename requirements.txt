@@ -1,0 +1,3 @@
+vdf==3.4
+requests
+pywin32
