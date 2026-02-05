@@ -8,9 +8,7 @@
 import os
 import sys
 import re
-import vdf
 import requests
-import json
 import shutil
 import tkinter as tk
 from win32com.client import Dispatch
@@ -48,77 +46,24 @@ class Splash:
         self.root.destroy()
 
 class SteamIconGrabber:
-    def __init__(self):
-        self.libraries = []
-        self.games = []
+    def __init__(self, steam_root, libraries, games):
+        self.steamRoot = steam_root
+        self.libraries = libraries
+        self.masterGameList = games
 
-        # Expand user profile properly
-        self.outputDir = os.path.expandvars(r'%USERPROFILE%\OneDrive\Desktop\\')
-
-        # Path to libraryfolders.vdf (Steam's canonical location)
-        self.gameDirFile = r'C:\Program Files (x86)\Steam\steamapps\libraryfolders.vdf'
-
-        # Derive Steam root dynamically from libraryfolders.vdf
-        if os.path.exists(self.gameDirFile):
-            with open(self.gameDirFile) as f:
-                libFile = vdf.load(f)
-                first = libFile['libraryfolders']['0']['path']
-                self.steamRoot = first
-        else:
-            # Fallback if Steam is installed somewhere unusual
-            self.steamRoot = r'C:\Program Files (x86)\Steam\\'
-
-        # Build icon directory cleanly
+        self.outputDir = os.path.expandvars(r'%USERPROFILE%\Desktop\\')
         self.steamIconRoot = os.path.join(self.steamRoot, 'steam', 'games')
-
-        # Ensure output directory exists
         os.makedirs(self.outputDir, exist_ok=True)
-
-    def dirFinder(self):
-        with open(self.gameDirFile) as f:
-            libFile = vdf.load(f)
-            for key in libFile['libraryfolders']:
-                path = libFile['libraryfolders'][key]['path']
-                self.libraries.append(path)
-        print("Libraries found:", self.libraries)
-
-    def gameScanner(self):
-        for library in self.libraries:
-            steamapps = os.path.join(library, "steamapps")
-
-            for dirpath, dirnames, filenames in os.walk(steamapps):
-                for filename in filenames:
-                    if filename.startswith("appmanifest_") and filename.endswith(".acf"):
-                        full_path = os.path.join(dirpath, filename)
-
-                        try:
-                            with open(full_path, "r", encoding="utf-8") as m:
-                                manifest = vdf.load(m).get("AppState", {})
-                        except Exception as e:
-                            print(f"[ERROR] Failed to read manifest {full_path}: {e}")
-                            continue
-
-                        # Build game entry
-                        game = {
-                            "appid": manifest.get("appid"),
-                            "name": manifest.get("name", str(manifest.get("appid"))),
-                            "installdir": manifest.get("installdir"),
-                            "library": library,
-                            # ⭐ Add LastPlayed here
-                            "last_played": int(manifest.get("LastPlayed", "0"))
-                        }
-
-                        self.games.append(game)
 
     def launchFetcher(self):
         icon_dir = os.path.join(self.steamRoot, 'steam', 'games')
 
-        for game in self.games:
+        for game in self.masterGameList:
             appid = game['appid']
             installdir = game['installdir']
             library = game['library']
 
-            game_path = os.path.join(library, 'steamapps', 'common', installdir)
+            game_path = os.path.join(library, 'common', installdir)
             game.setdefault('exe', None)
 
             # Find EXE
@@ -147,7 +92,7 @@ class SteamIconGrabber:
         icon_dir = os.path.join(self.steamRoot, "steam", "games")
         base_dir = os.path.abspath(icon_dir)
 
-        for game in self.games:
+        for game in self.masterGameList:
             appid = str(game["appid"])
             name = game.get("name", appid)
             safe_name = self.sanitize_filename(name)
@@ -217,6 +162,7 @@ class SteamIconGrabber:
             except Exception as e:
                 print(f"[ERROR] Download failed for {appid}: {e}")
                 game["icon"] = None
+
     def sanitize_filename(self, name):
         # Remove forbidden characters
         cleaned = re.sub(r'[\\/:*?"<>|]', '_', name)
@@ -238,32 +184,32 @@ class SteamIconGrabber:
 
     def gameShortcut(self, game):
         event_errors = []
-        if not game['exe']:
-            event_errors.append(
-                f'Missing Executable: {game["exe"]}\n'
-                f'With icon: {game["icon"]}\n'
-                f'For game: {game["name"]}'
-            )
+        if not game.get('exe'):
+            print(f"[ERROR] Missing executable for {game.get('name')}")
             return None
 
         safe_name = f'{game["appid"]}_{self.sanitize_filename(game["name"])}'
         shortcut_name = f'{safe_name}.lnk'
         shortcut_path = os.path.join(self.outputDir, shortcut_name)
 
+        try:
+            shell = Dispatch('WScript.Shell')
+            shortcut = shell.CreateShortcut(shortcut_path)
 
-        shell = Dispatch('WScript.Shell')
-        shortcut = shell.CreateShortcut(shortcut_path)
+            shortcut.TargetPath = game['exe']
+            shortcut.WorkingDirectory = os.path.dirname(game['exe'])
+            if game['icon']:
+                shortcut.IconLocation = game['icon']
+            if game.get('args'):
+                shortcut.Arguments = game['args']
 
-        shortcut.TargetPath = game['exe']
-        shortcut.WorkingDirectory = os.path.dirname(game['exe'])
-        if game['icon']:
-            shortcut.IconLocation = game['icon']
-        if game.get('args'):
-            shortcut.Arguments = game['args']
+            shortcut.save()
 
-        shortcut.save()
+            return shortcut_path
+        except Exception as s:
+            print(f"[ERROR] Failed to create shortcut for {game['name']}: {s}")
+            return None
 
-        return shortcut_path
 
     def findExistingShortcut(self, appid):
         for root, dirs, files in os.walk(self.outputDir):
@@ -273,7 +219,7 @@ class SteamIconGrabber:
         return None
 
     def gameSort(self, data, appid, shortcut):
-        entry = data.get(str(appid), {})
+        entry = data.get(appid, {})
         if not entry.get("success"):
             return
 
@@ -297,14 +243,19 @@ class SteamIconGrabber:
         dest_path = os.path.join(dest_dir, os.path.basename(shortcut))
         try:
             shutil.move(shortcut, dest_path)
-        except:
-            pass
+        except Exception as s:
+            print(f"[ERROR] Failed to move shortcut for {appid}: {s}")
 
     def cleanupShortcuts(self):
         seen = {}
-        removed = []
+        removed = set()
+
+        skip_folders = {'Favorites'}
 
         for root, dirs, files in os.walk(self.outputDir):
+            if os.path.basename(root) in skip_folders:
+                continue
+
             for file in files:
                 if not file.endswith(".lnk"):
                     continue
@@ -323,16 +274,17 @@ class SteamIconGrabber:
 
                 old_path, old_mtime = seen[appid]
                 if mtime > old_mtime:
-                    removed.append(old_path)
+                    removed.add(old_path)
                     seen[appid] = (path, mtime)
                 else:
-                    removed.append(path)
+                    removed.add(path)
 
         for path in removed:
             try:
                 os.remove(path)
-            except:
-                pass
+            except Exception as e:
+                print(f"[ERROR] Failed to remove {path}: {e}")
+
 
     def buildFavorites(self, limit=5):
         favorites_dir = os.path.join(self.outputDir, "Favorites")
@@ -340,7 +292,7 @@ class SteamIconGrabber:
 
         # Sort by recency
         recent = sorted(
-            self.games,
+            (g for g in self.masterGameList if g.get('last_played',0 ) > 0),
             key=lambda g: g.get("last_played", 0),
             reverse=True
         )
@@ -352,33 +304,35 @@ class SteamIconGrabber:
             if file.endswith(".lnk"):
                 try:
                     os.remove(os.path.join(favorites_dir, file))
-                except:
-                    pass
+                except Exception as e:
+                    print(f"[ERROR] Failed to remove old favorite {file}: {e}")
 
         # Copy shortcuts
         for game in top:
             appid = str(game["appid"])
             shortcut = self.findExistingShortcut(appid)
-            if not shortcut:
+            if not shortcut or favorites_dir in shortcut:
                 continue
 
             dest = os.path.join(favorites_dir, os.path.basename(shortcut))
-            shutil.copy(shortcut, dest)
+
+            try:
+                shutil.copy2(shortcut, dest)
+            except Exception as e:
+                print(f"[ERROR] Failed to copy favorite for {appid}: {e}")
+                continue
 
             ts = game.get("last_played", 0)
             if ts > 0:
-                os.utime(dest, (ts, ts))
+                try:
+                    os.utime(dest, (ts, ts))
+                except Exception as e:
+                    print(f"[ERROR] Failed to timestamp favorite {appid}: {e}")
 
     def run(self):
         splash = Splash()
 
         try:
-            splash.update("Finding Steam libraries...", 5)
-            self.dirFinder()
-
-            splash.update("Scanning for games...", 15)
-            self.gameScanner()
-
             splash.update("Fetching launch data...", 30)
             self.launchFetcher()
 
@@ -386,7 +340,7 @@ class SteamIconGrabber:
             self.iconResolver()
 
             splash.update("Creating shortcuts and sorting...", 65)
-            for game in self.games:
+            for game in self.masterGameList:
                 appid = str(game["appid"])
 
                 existing = self.findExistingShortcut(appid)
@@ -421,11 +375,7 @@ class SteamIconGrabber:
             splash.update("Done!", 100)
 
         except Exception as e:
-            with open("error_log.txt", "a", encoding="utf-8") as log:
-                log.write(f"ERROR: {e}\n")
+            print(f'Exception: {e}')
 
         finally:
             splash.close()
-
-if __name__ == '__main__':
-    SteamIconGrabber().run()
