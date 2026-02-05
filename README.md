@@ -2,7 +2,7 @@
 ![Platform: Windows](https://img.shields.io/badge/platform-Windows-blue)
 ![Python](https://img.shields.io/badge/python-3.10+-blue)
 
-# DragonSort
+# DragonShorts
 
 A small Windows utility that scans your Steam libraries, finds installed games, pulls metadata, grabs icons, and builds clean desktop shortcuts. It also sorts games into folders (Co-op, Multiplayer, Singleplayer, Unsorted) and creates a Favorites folder based on your most recently played titles.
 
@@ -73,4 +73,5 @@ LICENSE
 If you want to improve sorting rules, add new categories, or clean up the code, feel free to open a PR or issue.
 
 ## License
+
 MIT License.
