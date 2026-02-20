@@ -20,7 +20,42 @@ class GamePicker:
             },
 
             'battle.net': {
-                "Blizzard Games": r''
+                "Blizzard Games": {
+                    'Overwatch 2': r'Overwatch/',
+                    'World of Warcraft Retail': 'World of Warcraft/_retail_/',
+                    'World of Warcraft: Classic': 'World of Warcraft/_classic_/',
+                    'World of Warcraft PTR': r'World of Warcraft/_ptr_',
+                    'Diablo' : 'Diablo/',
+                    'Diablo II: Resurrected': 'Diablo II: Resurrected/',
+                    'Diablo III': 'Diablo III/',
+                    'Diablo IV': 'Diablo IV/',
+                    'Diablo Immortal': 'Diablo Immortal/',
+                    'The Outer Worlds 2': 'The Outer Worlds 2/',
+                    'Doom: The Dark Ages': 'Doom: The Dark Ages/',
+                    'Avowed': 'Avowed/',
+                    'Hearthstone': 'Hearthstone/',
+                    'Heroes of the Storm': 'Heroes of the Storm/',
+                    'Call of Duty': 'Call of Duty/',
+                    'Sea of Thieves': 'Sea of Thieves/',
+                    'Tony Hawk\'s Pro Skater 3 + 4': 'Tony Hawk\'s Pro Skater 3 + 4/',
+                    'Warcraft III': 'Warcaft III/',
+                    'StarCraft II': 'Starcraft II/',
+                    'StarCraft': 'StarCraft/',
+                    'Warcraft Rumble': 'Warcraft Rumble/',
+                    'Call of Duty: Modern Warfare III': 'Call of Duty: Modern Warfare III/',
+                    'Call of Duty: Modern Warfare II': 'Call of Duty: Modern Warfare II/',
+                    'Call of Duty: Black Ops Cold War': 'Call of Duty: Black Ops Cold War/',
+                    'Call of Duty: Modern Warfare': 'Call of Duty: Modern Warfare/',
+                    'Call of Duty: Black Ops 4': 'Call of Duty: Black Ops 4/',
+                    'Warcraft I: Remastered': 'Warcraft I: Remastered/',
+                    'Warcraft II: Remastered': 'Warcraft II: Remastered/',
+                    'Call of Duty: MW2 Campaign Remastered': 'Call of Duty: MW2 Campaign Remastered/',
+                    'Call of Duty: Vanguard': 'Call of Duty: Vanguard/',
+                    'Warcraft II: Battle.net Edition': 'Warcraft II: Battle.net Edition/',
+                    'Warcraft: Orcs and Humans': 'Warcraft: Orcs and Humans/',
+                    'Crash Bandicoot 4: It\'s About Time': 'Crash Bandicoot 4: It\'s About Time/',
+                    'Blizzard Arcade Collection': 'Blizzard Arcade Collection/'
+                }
             },
 
             'epic games': {
@@ -46,15 +81,30 @@ class GamePicker:
 
     def _runScanner(self, platform):
         if platform == 'steam':
-            from scanners.steam import scanForGames
-            root, libraries, games = scanForGames()
-            return games
+            try:
+                from scanners.steam import scanForGames
+                root, libraries, games = scanForGames()
+                return games
+            except ModuleNotFoundError as m:
+                print(f'Error loading Steam! Details:\n{m}')
+        elif platform == 'battle.net':
+            try:
+                from scanners.battlenet import battleNetScanner
+                self.bnetGames = self.libraries = battleNetScanner
+            except ModuleNotFoundError as m:
+                print(f'Error loading Battle.net! Details:\n{m}')
+        elif platform == 'epic games':
+            try:
+                from scanners.epic import epicScanner
+                self.epicGames = self.libraries = epicGamesScanner
+            except ModuleNotFoundError as m:
+                print(f'Error loading Epic Games! Details:\n{m}')
         else:
             return XPlatform(
-            platform=platform,
-            driveList=self.driveList,
-            defaultPaths=self.platformDefaultWindowsPaths[platform]
-        ).gameFinder()
+                platform=platform,
+                driveList=self.driveList,
+                defaultPaths=self.platformDefaultWindowsPaths[platform]
+            ).gameFinder()
 
     def findExe(self, folder):
         candidates = []
@@ -246,12 +296,13 @@ class GamePicker:
 
         except Exception as e:
             print(f"Error launching the game: {e}")
+        # print(self.randomGame())
 
     def UI(self):
         ui = Tk()
         ui.title('DragonShorts')
 
-        frame = ttk.Frame(ui, padding=10)
+        frame = ttk.Frame(ui, padding=50)
         frame.grid()
 
         # ttk.Label(frame, text="DragonShorts").grid(column=0, row=0, columnspan=2)
@@ -260,7 +311,8 @@ class GamePicker:
         self.results.grid(column=0, row=2, columnspan=2)
 
         # def initDB():
-        #     cursor = sqlite.Cursor()
+        #     conn = sqlite.connect('DragonShorts.sqlite')
+        #     conn.cursor(conn)
 
 
 
@@ -287,8 +339,9 @@ class GamePicker:
                 self.results.config(text='No Games Found!')
 
         def faveTracker(game):
-            if GamePicker.toggleFavorite(self):
+            if GamePicker.toggleFavorite(self, appid=game['appid']):
                 game['favorites'] = True
+                print(f'{game} added to favorite\'s list!')
                 return game
 
 
@@ -298,13 +351,18 @@ class GamePicker:
 
             favorites = ttk.Frame(frame, padding=10)
 
-            ttk.Menubutton(favorites, name='favorites', padding=10)
+            ttk.Menubutton(favorites, name='favorites', padding=10).grid_info()
         else:
             return None
 
         ttk.Button(frame, text='Scan Games', command=scan_games).grid(column = 0, row = 1)
 
-        ttk.Button(frame, text="Pick a random game", command=random_launch).grid(column=0, row=3)
+        ttk.Button(frame, text="Pick a random game", command=random_launch()).grid(column=0, row=3)
+
+        if self.randomGame:
+            randomConfirm = ttk.Frame(frame, padding=50)
+
+            randomConfirm.grid()
 
         ttk.Button(frame, text="Quit", command=ui.destroy).grid(column=1, row=3)
 

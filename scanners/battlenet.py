@@ -1,67 +1,60 @@
 import os
-import vdf
+import sqlite3
+import DragonShorts
 
 
-def bnetRoot():
-    possible = [
-        r'C:\Program Files (x86)\Battle.net'
-    ]
+class battleNetScanner:
+    def __init__(self):
+        super().__init__()
+        self.bnetGames = []
+        self.libraries = []
 
-    for path in possible:
-        if os.path.exists(path):
-            return path
-    return None
+    def bnetRoot(self):
+        possible = [
+            r'Program Files (x86)\Battle.net',
+            r'Program Files\Battle.net',
+            r'Battle.net'
+        ]
 
-def dirFinder(bnet_root):
-    root = os.path.isdir(bnet_root)
-    if not os.path.exists(root):
-        return []
-    with open(root, encoding='utf-8') as f:
-        data = vdf.load(f)
-    libraries = []
-    folders = data.get('',{})
-    for key, entry in folders.items():
-        if isinstance(entry, dict):
-            path = entry.get('path')
-        else:
-            path = entry
+        for path in possible:
+            if os.path.exists(path):
+                return path
+        return None
 
-        if path:
-            libraries.append(os.path.join(path, 'steamapps'))
+    def dirFinder(self):
+        bnetDir = DragonShorts.GamePicker.DriveScanner(self)
+        for d in bnetDir:
+            try:
+                if 'battle.net' not in d or 'bnet' not in d:
+                    continue
+                else:
+                    self.bnetGames.append(d)
+                    return self.bnetGames
+            except FileNotFoundError as fnf:
+                return f'Error while attempting to locate directory: {fnf}'
 
-    return libraries
+    def gameScanner(self, libraries):
+        for g in libraries:
+            self.bnetGames = [
+                f'{g}/{game}'
+                for game in libraries
+                if os.path.exists(g)
+            ]
 
-def gameScanner(libraries):
-    games = []
-    for steamapps in libraries:
+    def dbConnect(self):
+        conn = sqlite3.connect(f'{self.bnetRoot}product.db')
+        bnetCursor = conn.cursor()
+        bnetFetch = bnetCursor.fetchall()
+        for entry in bnetFetch:
+            self.bnetGames.append(entry)
+            print(f'Entry: {self.bnetGames.index(entry)} added to collection!')
+        return self.bnetGames
 
-        for dirpath, dirnames, filenames in os.walk(steamapps):
-            for filename in filenames:
-                if filename.startswith("appmanifest_") and filename.endswith(".acf"):
-                    full_path = os.path.join(dirpath, filename)
+    def scanForGames(self):
+        root = self.bnetRoot()
+        libraries = self.dirFinder()
+        games = self.gameScanner(libraries)
+        return root, libraries, games
 
-                    try:
-                        with open(full_path, "r", encoding="utf-8") as m:
-                            manifest = vdf.load(m).get("AppState", {})
-                    except Exception as e:
-                        print(f"[ERROR] Failed to read manifest {full_path}: {e}")
-                        continue
-
-                    # Build game entry
-                    game = {
-                        "appid": manifest.get("appid"),
-                        "name": manifest.get("name", str(manifest.get("appid"))),
-                        "installdir": manifest.get("installdir"),
-                        "library": steamapps,
-                        "last_played": int(manifest.get("LastPlayed", "0"))
-                    }
-
-                    games.append(game)
-
-    return games
-
-def scanForGames():
-    root = bnetRoot()
-    libraries = dirFinder(root)
-    games = gameScanner(libraries)
-    return root, libraries, games
+if __name__ == '__main__':
+    pass

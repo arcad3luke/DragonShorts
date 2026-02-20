@@ -126,7 +126,7 @@ class SteamIconGrabber:
 
             # If hashed icon exists locally, rename it
             if os.path.exists(local_hashed_icon):
-                readable_name = f"{appid}_{safe_name}.ico"
+                readable_name = f"{safe_name}.ico"
                 readable_path = os.path.join(icon_dir, readable_name)
                 target = os.path.abspath(readable_path)
 

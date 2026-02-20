@@ -28,7 +28,7 @@ class XPlatform:
 
                     try:
                         entries = os.listdir(full_path)
-                    except:
+                    except FileNotFoundError:
                         continue
 
                     for entry in entries:
