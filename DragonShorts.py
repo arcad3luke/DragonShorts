@@ -1,7 +1,7 @@
 import os
 import random
+import sqlite3 as sqlite
 import subprocess
-# import sqlite3 as sqlite
 import time as t
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tkinter import *
@@ -15,69 +15,41 @@ class GamePicker:
     def __init__(self):
         self.driveList = self.DriveScanner()
         self.masterGameList = []
-        self.platformDefaultWindowsPaths = {
-            'steam': {
-                "Steam": r'Program Files (x86)/Steam/'
-            },
+        self.platformDefaultWindowsPaths = {'steam': {"Steam": r'Program Files (x86)/Steam/'},
 
-            'battle.net': {
-                "Blizzard Games": {
-                    'Overwatch 2': r'Overwatch/',
-                    'World of Warcraft Retail': 'World of Warcraft/_retail_/',
-                    'World of Warcraft: Classic': 'World of Warcraft/_classic_/',
-                    'World of Warcraft PTR': r'World of Warcraft/_ptr_',
-                    'Diablo' : 'Diablo/',
-                    'Diablo II: Resurrected': 'Diablo II: Resurrected/',
-                    'Diablo III': 'Diablo III/',
-                    'Diablo IV': 'Diablo IV/',
-                    'Diablo Immortal': 'Diablo Immortal/',
-                    'The Outer Worlds 2': 'The Outer Worlds 2/',
-                    'Doom: The Dark Ages': 'Doom: The Dark Ages/',
-                    'Avowed': 'Avowed/',
-                    'Hearthstone': 'Hearthstone/',
-                    'Heroes of the Storm': 'Heroes of the Storm/',
-                    'Call of Duty': 'Call of Duty/',
-                    'Sea of Thieves': 'Sea of Thieves/',
-                    'Tony Hawk\'s Pro Skater 3 + 4': 'Tony Hawk\'s Pro Skater 3 + 4/',
-                    'Warcraft III': 'Warcaft III/',
-                    'StarCraft II': 'Starcraft II/',
-                    'StarCraft': 'StarCraft/',
-                    'Warcraft Rumble': 'Warcraft Rumble/',
-                    'Call of Duty: Modern Warfare III': 'Call of Duty: Modern Warfare III/',
-                    'Call of Duty: Modern Warfare II': 'Call of Duty: Modern Warfare II/',
-                    'Call of Duty: Black Ops Cold War': 'Call of Duty: Black Ops Cold War/',
-                    'Call of Duty: Modern Warfare': 'Call of Duty: Modern Warfare/',
-                    'Call of Duty: Black Ops 4': 'Call of Duty: Black Ops 4/',
-                    'Warcraft I: Remastered': 'Warcraft I: Remastered/',
-                    'Warcraft II: Remastered': 'Warcraft II: Remastered/',
-                    'Call of Duty: MW2 Campaign Remastered': 'Call of Duty: MW2 Campaign Remastered/',
-                    'Call of Duty: Vanguard': 'Call of Duty: Vanguard/',
-                    'Warcraft II: Battle.net Edition': 'Warcraft II: Battle.net Edition/',
-                    'Warcraft: Orcs and Humans': 'Warcraft: Orcs and Humans/',
-                    'Crash Bandicoot 4: It\'s About Time': 'Crash Bandicoot 4: It\'s About Time/',
-                    'Blizzard Arcade Collection': 'Blizzard Arcade Collection/'
-                }
-            },
+            'battle.net': {"Blizzard Games": {'Overwatch 2': r'Overwatch/',
+                'World of Warcraft Retail': 'World of Warcraft/_retail_/',
+                'World of Warcraft: Classic': 'World of Warcraft/_classic_/',
+                'World of Warcraft PTR': r'World of Warcraft/_ptr_', 'Diablo': 'Diablo/',
+                'Diablo II: Resurrected': 'Diablo II: Resurrected/', 'Diablo III': 'Diablo III/',
+                'Diablo IV': 'Diablo IV/', 'Diablo Immortal': 'Diablo Immortal/',
+                'The Outer Worlds 2': 'The Outer Worlds 2/', 'Doom: The Dark Ages': 'Doom: The Dark Ages/',
+                'Avowed': 'Avowed/', 'Hearthstone': 'Hearthstone/', 'Heroes of the Storm': 'Heroes of the Storm/',
+                'Call of Duty': 'Call of Duty/', 'Sea of Thieves': 'Sea of Thieves/',
+                'Tony Hawk\'s Pro Skater 3 + 4': 'Tony Hawk\'s Pro Skater 3 + 4/', 'Warcraft III': 'Warcaft III/',
+                'StarCraft II': 'Starcraft II/', 'StarCraft': 'StarCraft/', 'Warcraft Rumble': 'Warcraft Rumble/',
+                'Call of Duty: Modern Warfare III': 'Call of Duty: Modern Warfare III/',
+                'Call of Duty: Modern Warfare II': 'Call of Duty: Modern Warfare II/',
+                'Call of Duty: Black Ops Cold War': 'Call of Duty: Black Ops Cold War/',
+                'Call of Duty: Modern Warfare': 'Call of Duty: Modern Warfare/',
+                'Call of Duty: Black Ops 4': 'Call of Duty: Black Ops 4/',
+                'Warcraft I: Remastered': 'Warcraft I: Remastered/',
+                'Warcraft II: Remastered': 'Warcraft II: Remastered/',
+                'Call of Duty: MW2 Campaign Remastered': 'Call of Duty: MW2 Campaign Remastered/',
+                'Call of Duty: Vanguard': 'Call of Duty: Vanguard/',
+                'Warcraft II: Battle.net Edition': 'Warcraft II: Battle.net Edition/',
+                'Warcraft: Orcs and Humans': 'Warcraft: Orcs and Humans/',
+                'Crash Bandicoot 4: It\'s About Time': 'Crash Bandicoot 4: It\'s About Time/',
+                'Blizzard Arcade Collection': 'Blizzard Arcade Collection/'}},
 
-            'epic games': {
-                "Epic Games": r'Epic Games/'
-            },
+            'epic games': {"Epic Games": r'Epic Games/'},
 
-            'ubisoft': {
-                "Ubisoft Games": r'Ubisoft/Ubisoft Game Launcher/games/'
-            },
+            'ubisoft': {"Ubisoft Games": r'Ubisoft/Ubisoft Game Launcher/games/'},
 
-            'xbox': {
-                "Xbox Games": r'XboxGames/'
-            }
-        }
+            'xbox': {"Xbox Games": r'XboxGames/'}}
 
     def DriveScanner(self):
-        drives = [
-            f'{chr(letter)}:/'
-            for letter in range(ord('a'), ord('z') + 1)
-            if os.path.exists(f'{chr(letter)}:/')
-        ]
+        drives = [f'{chr(letter)}:/' for letter in range(ord('a'), ord('z') + 1) if os.path.exists(f'{chr(letter)}:/')]
         return drives
 
     def _runScanner(self, platform):
@@ -88,6 +60,8 @@ class GamePicker:
                 return games
             except ModuleNotFoundError as m:
                 print(f'Error loading Steam! Details:\n{m}')
+            except Exception as e:
+                print(f'Unexpected error in Steam scanner: {e}')
 
         elif platform == 'battle.net':
             try:
@@ -95,6 +69,8 @@ class GamePicker:
                 self.bnetGames = self.libraries = BattleNetScanner
             except ModuleNotFoundError as m:
                 print(f'Error loading Battle.net! Details:\n{m}')
+            except Exception as e:
+                print(f'Unexpected error in Battle.net scanner: {e}')
 
         elif platform == 'epic games':
             try:
@@ -102,15 +78,18 @@ class GamePicker:
                 self.epicGames = self.libraries = epicScanner
             except ModuleNotFoundError as m:
                 print(f'Error loading Epic Games! Details:\n{m}')
+            except Exception as e:
+                print(f'Unexpected error in Epic Games scanner: {e}')
 
         else:
-            return XPlatform(
-                platform=platform,
-                driveList=self.driveList,
-                defaultPaths=self.platformDefaultWindowsPaths[platform]
-            ).gameFinder()
+            return XPlatform(platform=platform, driveList=self.driveList,
+                defaultPaths=self.platformDefaultWindowsPaths[platform]).gameFinder()
 
     def findExe(self, folder):
+        if not os.path.exists(folder):
+            print(f"Folder does not exist: {folder}")
+            return None
+
         candidates = []
 
         for root, dirs, files in os.walk(folder):
@@ -122,24 +101,16 @@ class GamePicker:
             return None
 
         # Hard blacklist — never launch these
-        blacklist = [
-            "crash", "report", "bug", "updater", "launcher",
-            "helper", "telemetry", "anti", "cheat", "bssndrpt",
-            "unitycrash", "unrealcrash", "setup", "install", "DLC"
-        ]
+        blacklist = ["crash", "report", "bug", "updater", "launcher", "helper", "telemetry", "anti", "cheat",
+            "bssndrpt", "unitycrash", "unrealcrash", "setup", "install", "DLC"]
 
-        filtered = [
-            c for c in candidates
-            if not any(b in os.path.basename(c).lower() for b in blacklist)
-        ]
+        filtered = [c for c in candidates if not any(b in os.path.basename(c).lower() for b in blacklist)]
 
         if not filtered:
             filtered = candidates
 
         # Strong preference for real game binaries
-        preferred_keywords = [
-            "shipping", "win64", "win32", "game", "client"
-        ]
+        preferred_keywords = ["shipping", "win64", "win32", "game", "client"]
 
         for kw in preferred_keywords:
             for c in filtered:
@@ -155,10 +126,7 @@ class GamePicker:
         results = []
 
         with ThreadPoolExecutor(max_workers=len(platform)) as executor:
-            futureMap = {
-                executor.submit(self._runScanner,p): p
-                for p in platformList
-            }
+            futureMap = {executor.submit(self._runScanner, p): p for p in platformList}
             for future in as_completed(futureMap):
                 platform = futureMap[future]
                 try:
@@ -168,32 +136,11 @@ class GamePicker:
                         continue
 
                     if platform != 'steam':
-                        SYSTEM_BLACKLIST = [
-                            "$getcurrent",
-                            "$windows.~bt",
-                            "$windows.~ws",
-                            "$sysreset",
-                            "windows",
-                            "program files",
-                            "program files (x86)",
-                            "programdata",
-                            "recovery",
-                            "system volume information",
-                            "users",
-                            "onedrive",
-                            "appdata",
-                            "amd",
-                            "nvidia",
-                            "intel",
-                            "driver",
-                            "setup",
-                            "installer",
-                            "riot client",
-                            "riotclient",
-                            "vanguard",
-                            "vgc",
-                            "riot games\\riot client"
-                        ]
+                        SYSTEM_BLACKLIST = ["$getcurrent", "$windows.~bt", "$windows.~ws", "$sysreset", "windows",
+                            "program files", "program files (x86)", "programdata", "recovery",
+                            "system volume information", "users", "onedrive", "appdata", "amd", "nvidia", "intel",
+                            "driver", "setup", "installer", "riot client", "riotclient", "vanguard", "vgc",
+                            "riot games\\riot client"]
 
                         def is_system_folder(path):
                             lower = path.lower()
@@ -214,38 +161,25 @@ class GamePicker:
                             return False
 
                         # FILTER FIRST
-                        filtered = [
-                            g for g in result
-                            if not is_system_folder(g["path"]) and looks_like_game_folder(g["path"])
-                        ]
+                        filtered = [g for g in result if
+                            not is_system_folder(g["path"]) and looks_like_game_folder(g["path"])]
 
                         # THEN build entries
-                        result = [
-                            {
-                                "appid": f"{platform}:{g['name']}",
-                                "name": g["name"],
-                                "installdir": os.path.basename(g["path"]),
-                                "library": g["path"],
-                                "last_played": 0,
-                                "exe": None if platform == "xbox" else self.findExe(g['path']),
-                                "icon": None,
-                                "favorite": False
-                            }
-                            for g in filtered
-                        ]
+                        result = [{"appid": f"{platform}:{g['name']}", "name": g["name"],
+                            "installdir": os.path.basename(g["path"]), "library": g["path"], "last_played": 0,
+                            "exe": None if platform == "xbox" else self.findExe(g['path']), "icon": None,
+                            "favorite": False} for g in filtered]
                         for g in self.masterGameList:
                             print(g["name"])
                     elif platform == "xbox":
-                        XBOX_JUNK = [
-                            "stub", "tracker", "pack", "dlc", "bundle", "addon",
-                            "content", "po", "gp", "gamepass", "early access"
-                        ]
+                        XBOX_JUNK = ["stub", "tracker", "pack", "dlc", "bundle", "addon", "content", "po", "gp",
+                            "gamepass", "early access"]
                         name_lower = g["name"].lower()
                         if any(j in name_lower for j in XBOX_JUNK):
                             continue
                     else:
                         for g in result:
-                           g['favorite'] = False
+                            g['favorite'] = False
 
                     results.extend(result)
                 except Exception as sc:
@@ -339,8 +273,7 @@ class GamePicker:
             subprocess.Popen([f"steam://rungameid/{appid}"])
 
         except Exception as e:
-            print(f"Error launching the game: {e}")
-        # print(self.randomGame())
+            print(f"Error launching the game: {e}")  # print(self.randomGame())
 
     def UI(self):
         ui = Tk()
@@ -349,20 +282,22 @@ class GamePicker:
         frame = ttk.Frame(ui, padding=50)
         frame.grid()
 
-        # ttk.Label(frame, text="DragonShorts").grid(column=0, row=0, columnspan=2)
+        ttk.Label(frame, text="DragonShorts").grid(column=0, row=0, columnspan=2)
 
         self.results = ttk.Label(frame, text='')
         self.results.grid(column=0, row=2, columnspan=2)
 
-        # def initDB():
-        #     conn = sqlite.connect('DragonShorts.sqlite')
-        #     conn.cursor(conn)
+        ttk.Button(frame, text='Scan Games', command=scan_games).grid(column=0, row=1)
+        ttk.Button(frame, text="Pick a random game", command=random_launch).grid(column=0, row=3)
+        ttk.Button(frame, text="Quit", command=ui.destroy).grid(column=1, row=3)
+
+        ui.mainloop()
 
         def scan_games():
             self.results.config(text='Scanning...')
             ui.update_idletasks()
 
-            platforms = ['steam', 'battle.net', 'epic games','ubisoft','xbox']
+            platforms = ['steam', 'battle.net', 'epic games', 'ubisoft', 'xbox']
             self.masterGameList = self.runAllScanners(platforms)
 
             # root, libraries, games = scanForGames()
@@ -379,10 +314,8 @@ class GamePicker:
             game = self.masterGameList.pop(0)
 
             self.results.config(text=f"Selected: {game['name']}")
-            launch_confirm = messagebox.askyesno(
-                "Confirm Game Launch?",
-                f"Game selected: {game['name']}. Proceed with launch?"
-            )
+            launch_confirm = messagebox.askyesno("Confirm Game Launch?",
+                f"Game selected: {game['name']}. Proceed with launch?")
 
             if launch_confirm:
                 self.launch_game(game)
@@ -396,14 +329,13 @@ class GamePicker:
         #         print(f'{game} added to favorite\'s list!')
         #         return game
 
-
         ttk.Label(frame, text="Favorite Games")
 
         favorites = ttk.Frame(frame, padding=10)
 
         ttk.Menubutton(favorites, name='favorites', padding=10).grid_info()
 
-        ttk.Button(frame, text='Scan Games', command=scan_games).grid(column = 0, row = 1)
+        ttk.Button(frame, text='Scan Games', command=scan_games).grid(column=0, row=1)
 
         # ttk.Button(frame, text='Print selected game', command=selectedGame().grid(column = 1, row = 1)
 
@@ -412,6 +344,7 @@ class GamePicker:
         ttk.Button(frame, text="Quit", command=ui.destroy).grid(column=1, row=3)
 
         ui.mainloop()
+
 
 if __name__ == "__main__":
     picker = GamePicker()
