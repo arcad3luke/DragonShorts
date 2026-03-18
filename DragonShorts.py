@@ -1,7 +1,7 @@
 import os
 import random
 import subprocess
-import sqlite3 as sqlite
+# import sqlite3 as sqlite
 import time as t
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tkinter import *
@@ -274,6 +274,49 @@ class GamePicker:
 
         return game
 
+    def validate_game_list(self):
+        valid_games = []
+        errors = []
+
+        for game in self.masterGameList:
+            # Check required keys
+            required = ["name", "appid", "exe"]
+            missing = [k for k in required if k not in game]
+
+            if missing:
+                errors.append(f"Game missing keys {missing}: {game}")
+                continue
+
+            # Validate name
+            if not isinstance(game["name"], str) or not game["name"].strip():
+                errors.append(f"Invalid name: {game}")
+                continue
+
+            # Validate appid
+            if not isinstance(game["appid"], str):
+                errors.append(f"Invalid appid (must be string): {game}")
+                continue
+
+            # Validate exe path (only for non‑Steam games)
+            if not game["appid"].isdigit():
+                exe = game["exe"]
+                if exe and not os.path.isfile(exe):
+                    errors.append(f"Invalid exe path: {exe} for {game['name']}")
+                    continue
+
+            # If everything is good:
+            valid_games.append(game)
+
+        # Replace list with only valid entries
+        self.masterGameList = valid_games
+
+        # Show errors if any
+        if errors:
+            print("\n[GAME LIST VALIDATION ERRORS]")
+            for e in errors:
+                print(" -", e)
+            print("\n")
+
     def launch_game(self, game):
         try:
             appid = str(game["appid"])
@@ -290,7 +333,7 @@ class GamePicker:
                 messagebox.showerror("Error", f"{game['name']} has no valid executable.")
                 return
 
-            subprocess.Popen([exe], cwd=os.path.dirname(exe))
+            subprocess.Popen([f"steam://rungameid/{appid}"])
 
         except Exception as e:
             print(f"Error launching the game: {e}")
@@ -325,23 +368,24 @@ class GamePicker:
             self.results.config(text=f'Found {len(self.masterGameList)} games')
 
         def random_launch():
-            game = self.randomGame()
+            if not self.masterGameList:
+                self.results.config(text="No Games Found!")
+                return
 
-            if game:
-                self.results.config(text=f"Selected: {game['name']}")
-                launch_confirm = messagebox.askyesno(
-                    "Confirm Game Launch?",
-                    f"Game selected: {game['name']}. Proceed with launch?"
-                )
+            # Get the next game in the queue
+            game = self.masterGameList.pop(0)
 
-                if launch_confirm:
-                    self.launch_game(game)
-                else:
-                    self.results.config(text='Launch aborted!')
-                    t.sleep(5)
-                    quit()
+            self.results.config(text=f"Selected: {game['name']}")
+            launch_confirm = messagebox.askyesno(
+                "Confirm Game Launch?",
+                f"Game selected: {game['name']}. Proceed with launch?"
+            )
+
+            if launch_confirm:
+                self.launch_game(game)
             else:
-                self.results.config(text='No Games Found!')
+                # Put it back at the end if rejected
+                self.masterGameList.append(game)
 
         # def faveTracker(game):
         #     if GamePicker.toggleFavorite(self, appid=game['appid']):
@@ -360,12 +404,7 @@ class GamePicker:
 
         # ttk.Button(frame, text='Print selected game', command=selectedGame().grid(column = 1, row = 1)
 
-        ttk.Button(frame, text="Pick a random game", command=random_launch()).grid(column=0, row=3)
-
-        if self.randomGame:
-            randomConfirm = ttk.Frame(frame, padding=50)
-
-            randomConfirm.grid()
+        ttk.Button(frame, text="Pick a random game", command=random_launch).grid(column=0, row=3)
 
         ttk.Button(frame, text="Quit", command=ui.destroy).grid(column=1, row=3)
 
