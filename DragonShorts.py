@@ -62,14 +62,16 @@ class GamePicker:
                 print(f'Error loading Steam! Details:\n{m}')
             except Exception as e:
                 print(f'Unexpected error in Steam scanner: {e}')
+
         elif platform == 'battle.net':
             try:
-                from scanners.battlenet import battleNetScanner
-                self.bnetGames = self.libraries = battleNetScanner
+                from scanners.battlenet import BattleNetScanner
+                self.bnetGames = self.libraries = BattleNetScanner
             except ModuleNotFoundError as m:
                 print(f'Error loading Battle.net! Details:\n{m}')
             except Exception as e:
                 print(f'Unexpected error in Battle.net scanner: {e}')
+
         elif platform == 'epic games':
             try:
                 from scanners.epic import epicScanner
@@ -78,6 +80,7 @@ class GamePicker:
                 print(f'Error loading Epic Games! Details:\n{m}')
             except Exception as e:
                 print(f'Unexpected error in Epic Games scanner: {e}')
+
         else:
             return XPlatform(platform=platform, driveList=self.driveList,
                 defaultPaths=self.platformDefaultWindowsPaths[platform]).gameFinder()
