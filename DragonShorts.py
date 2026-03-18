@@ -2,6 +2,7 @@ import os
 import random
 import subprocess
 import sqlite3 as sqlite
+import time as t
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tkinter import *
 from tkinter import messagebox
@@ -96,7 +97,7 @@ class GamePicker:
         elif platform == 'epic games':
             try:
                 from scanners.epic import epicScanner
-                self.epicGames = self.libraries = epicGamesScanner
+                self.epicGames = self.libraries = epicScanner
             except ModuleNotFoundError as m:
                 print(f'Error loading Epic Games! Details:\n{m}')
         else:
@@ -121,7 +122,7 @@ class GamePicker:
         blacklist = [
             "crash", "report", "bug", "updater", "launcher",
             "helper", "telemetry", "anti", "cheat", "bssndrpt",
-            "unitycrash", "unrealcrash", "setup", "install"
+            "unitycrash", "unrealcrash", "setup", "install", "DLC"
         ]
 
         filtered = [
@@ -164,9 +165,6 @@ class GamePicker:
                         continue
 
                     if platform != 'steam':
-
-
-
                         SYSTEM_BLACKLIST = [
                             "$getcurrent",
                             "$windows.~bt",
@@ -314,9 +312,6 @@ class GamePicker:
         #     conn = sqlite.connect('DragonShorts.sqlite')
         #     conn.cursor(conn)
 
-
-
-
         def scan_games():
             self.results.config(text='Scanning...')
             ui.update_idletasks()
@@ -334,28 +329,36 @@ class GamePicker:
 
             if game:
                 self.results.config(text=f"Selected: {game['name']}")
-                self.launch_game(game)
+                launch_confirm = messagebox.askyesno(
+                    "Confirm Game Launch?",
+                    f"Game selected: {game['name']}. Proceed with launch?"
+                )
+
+                if launch_confirm:
+                    self.launch_game(game)
+                else:
+                    self.results.config(text='Launch aborted!')
+                    t.sleep(5)
+                    quit()
             else:
                 self.results.config(text='No Games Found!')
 
-        def faveTracker(game):
-            if GamePicker.toggleFavorite(self, appid=game['appid']):
-                game['favorites'] = True
-                print(f'{game} added to favorite\'s list!')
-                return game
+        # def faveTracker(game):
+        #     if GamePicker.toggleFavorite(self, appid=game['appid']):
+        #         game['favorites'] = True
+        #         print(f'{game} added to favorite\'s list!')
+        #         return game
 
 
+        ttk.Label(frame, text="Favorite Games")
 
-        if faveTracker:
-            ttk.Label(frame, text="Favorite Games")
+        favorites = ttk.Frame(frame, padding=10)
 
-            favorites = ttk.Frame(frame, padding=10)
-
-            ttk.Menubutton(favorites, name='favorites', padding=10).grid_info()
-        else:
-            return None
+        ttk.Menubutton(favorites, name='favorites', padding=10).grid_info()
 
         ttk.Button(frame, text='Scan Games', command=scan_games).grid(column = 0, row = 1)
+
+        # ttk.Button(frame, text='Print selected game', command=selectedGame().grid(column = 1, row = 1)
 
         ttk.Button(frame, text="Pick a random game", command=random_launch()).grid(column=0, row=3)
 
