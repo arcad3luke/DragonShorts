@@ -12,7 +12,7 @@ class XPlatform:
         IGNORE_NAMES = {
             "engine", "engines", "redist", "redistributables",
             "common", "support", "tools", "launcher", "launchers",
-            "temp", "tmp", "sdk", "sdks"
+            "temp", "tmp", "sdk", "sdks", "DLC", "dlc"
         }
 
         for drive in self.driveList:

@@ -88,18 +88,21 @@ class GamePicker:
                 return games
             except ModuleNotFoundError as m:
                 print(f'Error loading Steam! Details:\n{m}')
+
         elif platform == 'battle.net':
             try:
-                from scanners.battlenet import battleNetScanner
-                self.bnetGames = self.libraries = battleNetScanner
+                from scanners.battlenet import BattleNetScanner
+                self.bnetGames = self.libraries = BattleNetScanner
             except ModuleNotFoundError as m:
                 print(f'Error loading Battle.net! Details:\n{m}')
+
         elif platform == 'epic games':
             try:
                 from scanners.epic import epicScanner
                 self.epicGames = self.libraries = epicScanner
             except ModuleNotFoundError as m:
                 print(f'Error loading Epic Games! Details:\n{m}')
+
         else:
             return XPlatform(
                 platform=platform,
