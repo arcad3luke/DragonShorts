@@ -129,9 +129,3 @@ pyinstaller --noconfirm --clean --onefile --noconsole --name DragonShorts `
   - `%TEMP%\DragonShorts_scan.log`
 - For release builds, disable logging in code:
   - `LOG_ENABLED = False`
-## Logging
-
-- Debug scan logging is written to:
-  - `%TEMP%\DragonShorts_scan.log`
-- For release builds, disable logging in code:
-  - `LOG_ENABLED = False`
