@@ -1,22 +1,13 @@
 import os
 import sys
 import queue
-import sys
-import queue
 import random
 import sqlite3 as sqlite
 import subprocess
 import threading
 import contextlib
 import io
-import threading
-import contextlib
-import io
 import time as t
-import tempfile
-import traceback
-from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 import tempfile
 import traceback
 from datetime import datetime
@@ -55,7 +46,6 @@ except Exception:
 
 PLATFORM_ORDER = ["steam", "battle.net", "epic games", "ubisoft", "xbox"]
 
-# Force strict one-platform-at-a-time behavior
 SCAN_MAX_WORKERS = 1
 SCAN_UI_QUEUE_MAX = 1000
 SCAN_HARD_CAP_SECONDS = 180
@@ -72,11 +62,11 @@ PLATFORM_LABELS = {
 
 SCANNER_TIMEOUT_BY_PLATFORM = {
     # idle timeout seconds (not wall-clock runtime)
-    "steam":      60,
-    "battle.net": 120,
-    "epic games": 90,
-    "ubisoft":    90,
-    "xbox":       120,
+    "steam":      30,
+    "battle.net": 90,
+    "epic games": 30,
+    "ubisoft":    30,
+    "xbox":       30,
 }
 
 
@@ -152,7 +142,6 @@ class ScanProgressReporter:
         self._emit("detail", f"{label} | {detail}" if detail else label)
 
     def update_bar(self, label, current, total):
-        # was incorrectly emitted as "detail"
         self._emit("platform", label, current, total)
 
     def finish_phase(self, label, detail="done"):
@@ -167,176 +156,8 @@ class ScannerOutputBridge(io.TextIOBase):
         self.callback = callback
         self._buf = ""
 
-    def writable(self): return True
-
-    def write(self, text):
-        if not text:
-            return 0
-        self._buf += text.replace("\r", "\n")
-        while "\n" in self._buf:
-            line, self._buf = self._buf.split("\n", 1)
-            line = line.strip()
-            if not line:
-                continue
-            if line.startswith("[bnet] "):
-                line = line[7:].strip()
-            if self.callback:
-                self.callback("detail", self.platform, line, None, None)
-        return len(text)
-
-    def flush(self):
-        line = self._buf.strip()
-        if line and self.callback:
-            if line.startswith("[bnet] "):
-                line = line[7:].strip()
-            self.callback("detail", self.platform, line, None, None)
-        self._buf = ""
-
-
-# ── main class ───────────────────────────────────────────────────────────────
-# ── frozen path fix (must be before scanner imports) ─────────────────────────
-if getattr(sys, "frozen", False):
-    _base = sys._MEIPASS
-else:
-    _base = os.path.dirname(os.path.abspath(__file__))
-
-if _base not in sys.path:
-    sys.path.insert(0, _base)
-
-# ── static scanner imports ────────────────────────────────────────────────────
-try:
-    from scanners.steam import scanForGames as steam_scan_for_games
-except Exception:
-    steam_scan_for_games = None
-
-try:
-    from scanners.epic import scanForGames as epic_scan_for_games
-except Exception:
-    epic_scan_for_games = None
-
-try:
-    from scanners.battlenet import BattleNetScanner
-except Exception:
-    BattleNetScanner = None
-
-
-# ── constants ────────────────────────────────────────────────────────────────
-
-PLATFORM_ORDER = ["steam", "battle.net", "epic games", "ubisoft", "xbox"]
-
-# Force strict one-platform-at-a-time behavior
-SCAN_MAX_WORKERS = 1
-SCAN_UI_QUEUE_MAX = 1000
-SCAN_HARD_CAP_SECONDS = 180
-LOG_ENABLED = False
-LOG_FILE = os.path.join(tempfile.gettempdir(), "DragonShorts_scan.log")
-
-PLATFORM_LABELS = {
-    "steam":      "Steam",
-    "battle.net": "Battle.net",
-    "epic games": "Epic Games",
-    "ubisoft":    "Ubisoft",
-    "xbox":       "Xbox",
-}
-
-SCANNER_TIMEOUT_BY_PLATFORM = {
-    # idle timeout seconds (not wall-clock runtime)
-    "steam":      60,
-    "battle.net": 120,
-    "epic games": 90,
-    "ubisoft":    90,
-    "xbox":       120,
-}
-
-
-PLATFORM_ROOT_MAP = {
-    "steam": [
-        r"Program Files (x86)\Steam\steamapps\common",
-        r"Program Files\Steam\steamapps\common",
-        r"SteamLibrary\steamapps\common",
-        r"Games\SteamLibrary\steamapps\common",
-    ],
-    "epic games": [
-        r"Program Files\Epic Games",
-        r"Program Files (x86)\Epic Games",
-        r"Epic Games",
-        r"EpicGames",
-        r"Games\Epic Games",
-    ],
-    "ubisoft": [
-        r"Program Files (x86)\Ubisoft\Ubisoft Game Launcher\games",
-        r"Program Files\Ubisoft\Ubisoft Game Launcher\games",
-        r"Ubisoft\Ubisoft Game Launcher\games",
-    ],
-    "xbox": [
-        r"XboxGames",
-        r"Program Files\ModifiableWindowsApps",
-    ],
-}
-
-EXE_BLACKLIST = {
-    "crash", "report", "bug", "updater", "helper",
-    "telemetry", "anti", "cheat", "bssndrpt",
-    "unitycrash", "unrealcrash", "setup", "install",
-}
-
-# paths that are never game folders
-SYSTEM_BLACKLIST = {
-    "$getcurrent", "$windows.~bt", "$windows.~ws", "$sysreset",
-    "windows", "programdata", "recovery", "system volume information",
-}
-
-XBOX_JUNK = {
-    "stub", "tracker", "pack", "bundle", "addon",
-    "content", "gamepass",
-}
-
-PREFERRED_EXE_KEYWORDS = ("shipping", "win64", "win32", "game", "client")
-
-WALK_SKIP_DIRS = {
-    "__pycache__", ".git", ".vs", "redistributables",
-    "redist", "_commonredist", "support", "cache", "logs",
-    "crashreports", "telemetry",
-}
-
-# scanners that already resolved their exe — skip re-validation
-TRUSTED_PLATFORMS = {"steam", "battle.net", "epic games"}
-
-
-# ── progress helpers ──────────────────────────────────────────────────────────
-
-class ScanProgressReporter:
-    def __init__(self, platform, callback=None):
-        self.platform = platform
-        self.callback = callback
-
-    def _emit(self, kind, message, current=None, total=None):
-        if self.callback:
-            self.callback(kind, self.platform, message, current, total)
-
-    def start_phase(self, label):
-        self._emit("detail", label)
-
-    def update_spinner(self, label, detail="", interval=0.1):
-        self._emit("detail", f"{label} | {detail}" if detail else label)
-
-    def update_bar(self, label, current, total):
-        # was incorrectly emitted as "detail"
-        self._emit("platform", label, current, total)
-
-    def finish_phase(self, label, detail="done"):
-        self._emit("detail", f"{label} | {detail}")
-
-
-class ScannerOutputBridge(io.TextIOBase):
-    """Redirect scanner stdout/stderr into the progress queue."""
-
-    def __init__(self, platform, callback=None):
-        self.platform = platform
-        self.callback = callback
-        self._buf = ""
-
-    def writable(self): return True
+    def writable(self): 
+        return True
 
     def write(self, text):
         if not text:
@@ -391,8 +212,6 @@ class GamePicker:
         except Exception:
             pass
 
-    # ── drives ────────────────────────────────────────────────────────────────
-
     def _scanDrives(self):
         return [
             f"{chr(c)}:\\"
@@ -400,10 +219,7 @@ class GamePicker:
             if os.path.exists(f"{chr(c)}:\\")
         ]
 
-    # ── progress ──────────────────────────────────────────────────────────────
-
     def _progressCallback(self, kind, platform, message, current=None, total=None):
-        # Ignore late scanner chatter after scan is over
         if not self.scanActive and kind != "done":
             return
 
@@ -421,7 +237,6 @@ class GamePicker:
         try:
             self.scanQueue.put_nowait((kind, platform, message, current, total))
         except queue.Full:
-            # keep non-detail updates if possible
             if kind != "detail":
                 try:
                     self.scanQueue.put((kind, platform, message, current, total), timeout=0.2)
@@ -434,8 +249,6 @@ class GamePicker:
         elapsed = t.time() - self.scanStartedAt
         eta = max(0, int((elapsed / completed) * (total - completed)))
         return f"{eta}s" if eta < 60 else f"{eta // 60}m {eta % 60:02d}s"
-
-    # ── filesystem helpers ────────────────────────────────────────────────────
 
     def _safeScandir(self, path):
         try:
@@ -524,8 +337,6 @@ class GamePicker:
 
         return best_filtered or best_any
 
-    # ── normalisation ─────────────────────────────────────────────────────────
-
     def _normalizeScannerResults(self, platform, result):
         if not result:
             return []
@@ -571,8 +382,6 @@ class GamePicker:
             })
 
         return normalized
-
-    # ── scanners ──────────────────────────────────────────────────────────────
 
     def _scanPlatformFilesystem(self, platform, reporter):
         roots = list(self._iterPlatformRoots(platform))
@@ -700,62 +509,6 @@ class GamePicker:
             raise err
         return result
 
-    # ── run all ───────────────────────────────────────────────────────────────
-            except Exception:
-                self._log("battle.net scanner: exception\n" + traceback.format_exc())
-                return []
-
-        if platform == "epic games":
-            reporter.start_phase("Scanning Epic Games")
-            if epic_scan_for_games:
-                try:
-                    games = epic_scan_for_games()
-                    reporter.finish_phase("Scanning Epic Games", f"{len(games) if games else 0} game(s)")
-                    return games or []
-                except Exception:
-                    pass
-            return self._scanPlatformFilesystem(platform, reporter)
-
-        if platform in {"ubisoft", "xbox"}:
-            reporter.start_phase(f"Scanning {self._platformLabel(platform)}")
-            return self._scanPlatformFilesystem(platform, reporter)
-
-        reporter.finish_phase(f"Scanning {self._platformLabel(platform)}", "unsupported")
-        return []
-
-    def _runScannerWithTimeout(self, platform, progress_callback=None):
-        timeout_s = SCANNER_TIMEOUT_BY_PLATFORM.get(platform, 240)
-        result = []
-        err = None
-        done = threading.Event()
-
-        def _target():
-            nonlocal result, err
-            try:
-                result = self._runScanner(platform, progress_callback)
-            except Exception as e:
-                err = e
-            finally:
-                done.set()
-
-        th = threading.Thread(target=_target, daemon=True)
-        th.start()
-        th.join(timeout=timeout_s)
-
-        if not done.is_set():
-            self._log(f"{platform}: HARD TIMEOUT after {timeout_s}s")
-            if progress_callback:
-                progress_callback("detail", platform, f"hard timeout after {timeout_s}s", None, None)
-            return []
-
-        if err:
-            raise err
-        return result
-
-    # ── run all ───────────────────────────────────────────────────────────────
-
-    def runAllScanners(self, platforms, progress_callback=None):
-        platform_list = list(platforms)
     def runAllScanners(self, platforms, progress_callback=None):
         platform_list = list(platforms)
         results = []
@@ -783,34 +536,6 @@ class GamePicker:
                     path  = os.path.normcase(game.get("path") or game.get("library") or "")
                     exe   = os.path.normcase(game.get("exe") or "")
 
-                    # scope appid to platform so cross-platform name collisions don't dedup
-                    key = f"{platform}:{appid}" if appid else path or exe
-                    if not key:
-        completed = 0
-        total = len(platform_list)
-        seen_games = set()
-
-        self._log(f"runAllScanners: start | sequential=True | platforms={platform_list}")
-
-        for platform in platform_list:
-            platform_count = 0
-            try:
-                items = self._normalizeScannerResults(
-                    platform,
-                    self._runScannerWithTimeout(platform, progress_callback)
-                )
-                platform_count = len(items)
-                self._log(f"{platform}: normalized {platform_count}")
-
-                if progress_callback:
-                    progress_callback("count", platform, platform_count, None, None)
-
-                for game in items:
-                    appid = str(game.get("appid") or "")
-                    path  = os.path.normcase(game.get("path") or game.get("library") or "")
-                    exe   = os.path.normcase(game.get("exe") or "")
-
-                    # scope appid to platform so cross-platform name collisions don't dedup
                     key = f"{platform}:{appid}" if appid else path or exe
                     if not key:
                         continue
@@ -837,43 +562,13 @@ class GamePicker:
 
         self._log(f"runAllScanners: end | total_results={len(results)}")
         return results
-                    if key in seen_games:
-                        continue
-                    seen_games.add(key)
-                    results.append(game)
-
-            except Exception as exc:
-                self._log(f"{platform} scanner failed: {exc}\n{traceback.format_exc()}")
-                if progress_callback:
-                    progress_callback("count", platform, 0, None, None)
-
-            finally:
-                completed += 1
-                if progress_callback:
-                    progress_callback(
-                        "overall",
-                        platform,
-                        f"{platform} complete | {platform_count} game(s)",
-                        completed,
-                        total
-                    )
-
-        self._log(f"runAllScanners: end | total_results={len(results)}")
-        return results
-
-    # ── game actions ──────────────────────────────────────────────────────────
-    # ── game actions ──────────────────────────────────────────────────────────
 
     def randomGame(self):
         valid = [g for g in self.masterGameList
                  if g.get("exe") and os.path.isfile(g["exe"])]
         if not valid:
-        valid = [g for g in self.masterGameList
-                 if g.get("exe") and os.path.isfile(g["exe"])]
-        if not valid:
             messagebox.showerror("Error", "No games with valid executables found.")
             return None
-        return random.choice(valid)
         return random.choice(valid)
 
     def launch_game(self, game):
@@ -890,22 +585,13 @@ class GamePicker:
         except Exception as exc:
             print(f"Error launching the game: {exc}")
 
-    # ── UI ────────────────────────────────────────────────────────────────────
-            subprocess.Popen([exe], cwd=os.path.dirname(exe))
-        except Exception as exc:
-            print(f"Error launching the game: {exc}")
-
-    # ── UI ────────────────────────────────────────────────────────────────────
-
     def UI(self):
         ui = Tk()
-        ui.title("DragonShorts")
         ui.title("DragonShorts")
 
         frame = ttk.Frame(ui, padding=50)
         frame.grid()
 
-        self.results = ttk.Label(frame, text="")
         self.results = ttk.Label(frame, text="")
         self.results.grid(column=0, row=2, columnspan=2)
 
@@ -998,10 +684,7 @@ class GamePicker:
                 self._log(f"pump_scan_updates error: {exc}")
                 self.scanStatus.set(f"UI error: {exc}")
 
-            # ── check done OUTSIDE the queue loop ────────────────────────────
-            # This fires even if queue was empty when _scanDoneEvent gets set
             if self.scanActive and self._scanDoneEvent.is_set():
-                # drain any remaining queue items first
                 try:
                     while True:
                         kind, platform, message, current, total = self.scanQueue.get_nowait()
@@ -1031,146 +714,8 @@ class GamePicker:
                 self._log("scan_worker: exception\n" + traceback.format_exc())
             finally:
                 self._scanResultBuffer = games or []
-                self._scanDoneEvent.set()  # always set completion signal
+                self._scanDoneEvent.set()
 
-                # best-effort done event for normal path
-                done_item = ("done", None, self._scanResultBuffer, None, None)
-                for _ in range(20):
-                    try:
-                        self.scanQueue.put(done_item, timeout=0.1)
-                        break
-                    except queue.Full:
-                        try:
-                            self.scanQueue.get_nowait()
-                        except queue.Empty:
-                            pass
-
-                self._log("scan_worker: done queued")
-        self.scanStatus = StringVar(value="Idle")
-        ttk.Label(frame, textvariable=self.scanStatus).grid(
-            column=0, row=3, columnspan=2, pady=(5, 0))
-
-        self.scanProgress = ttk.Progressbar(
-            frame, mode="determinate", length=320, maximum=len(PLATFORM_ORDER))
-        self.scanProgress.grid(column=0, row=4, columnspan=2, pady=(5, 10))
-
-        platformStatusFrame = ttk.LabelFrame(frame, text="Platform Status", padding=10)
-        platformStatusFrame.grid(column=0, row=5, columnspan=2, sticky="ew", pady=(0, 10))
-
-        self.platformStatusVars = {}
-        for row_idx, platform in enumerate(self.platformOrder):
-            label = self._platformLabel(platform)
-            var   = StringVar(value=f"{label}: idle")
-            self.platformStatusVars[platform] = var
-            ttk.Label(platformStatusFrame, textvariable=var, anchor="w").grid(
-                column=0, row=row_idx, sticky="w", pady=1)
-
-        def finalize_scan(games):
-            self.masterGameList = games or []
-            self.scanActive = False
-            self.scanProgress["value"] = self.scanProgress["maximum"]
-            self.scanStatus.set("Scan complete")
-            self.results.config(text=f"Found {len(self.masterGameList)} games")
-            self._activePlatform = None
-            self._log(f"UI finalize_scan: {len(self.masterGameList)} games")
-            scanButton.config(state="normal")
-
-        def pump_scan_updates():
-            try:
-                processed = 0
-                while processed < 120:
-                    kind, platform, message, current, total = self.scanQueue.get_nowait()
-                    processed += 1
-
-                    if kind == "done":
-                        finalize_scan(message)
-                        return
-
-                    if kind == "count":
-                        if platform:
-                            count = int(message or 0)
-                            self._platformFoundCounts[platform] = count
-                            if platform in self.platformStatusVars:
-                                self.platformStatusVars[platform].set(
-                                    f"{self._platformLabel(platform)}: {count} game(s)"
-                                )
-
-                    elif kind == "detail":
-                        if platform:
-                            self._activePlatform = platform
-                            self.scanStatus.set(f"{self._platformLabel(platform)}: {message}")
-                            if platform in self.platformStatusVars:
-                                self.platformStatusVars[platform].set(
-                                    f"{self._platformLabel(platform)}: {message}"
-                                )
-
-                    elif kind == "platform":
-                        if platform:
-                            self._activePlatform = platform
-                        if platform in self.platformStatusVars and current is not None and total:
-                            self.platformStatusVars[platform].set(
-                                f"{self._platformLabel(platform)}: {message} ({current}/{total})"
-                            )
-
-                    elif kind == "overall":
-                        if total:
-                            self.scanProgress.configure(maximum=total)
-                        if current is not None:
-                            self.scanProgress["value"] = current
-                        eta = self._formatEta(current or 0, total or 0)
-                        active_label = self._platformLabel(self._activePlatform) if self._activePlatform else "Working"
-                        found_so_far = sum(self._platformFoundCounts.values())
-                        self.results.config(
-                            text=f"Scanning {active_label}... {current}/{total} platforms | {found_so_far} found | ETA {eta}"
-                        )
-                        if platform in self.platformStatusVars:
-                            count = self._platformFoundCounts.get(platform, 0)
-                            self.platformStatusVars[platform].set(
-                                f"{self._platformLabel(platform)}: complete ({count} game(s))"
-                            )
-
-            except queue.Empty:
-                pass
-            except Exception as exc:
-                self._log(f"pump_scan_updates error: {exc}")
-                self.scanStatus.set(f"UI error: {exc}")
-
-            # ── check done OUTSIDE the queue loop ────────────────────────────
-            # This fires even if queue was empty when _scanDoneEvent gets set
-            if self.scanActive and self._scanDoneEvent.is_set():
-                # drain any remaining queue items first
-                try:
-                    while True:
-                        kind, platform, message, current, total = self.scanQueue.get_nowait()
-                        if kind == "done":
-                            finalize_scan(message)
-                            return
-                        if kind == "count" and platform:
-                            count = int(message or 0)
-                            self._platformFoundCounts[platform] = count
-                except queue.Empty:
-                    pass
-                finalize_scan(self._scanResultBuffer)
-                return
-
-            if self.scanActive:
-                ui.after(100, pump_scan_updates)
-
-        def scan_worker(platforms):
-            games = []
-            try:
-                self._log("scan_worker: begin")
-                games = self.runAllScanners(
-                    platforms,
-                    progress_callback=self._progressCallback
-                )
-            except Exception:
-                self._log("scan_worker: exception\n" + traceback.format_exc())
-            finally:
-                self._scanResultBuffer = games or []
-                self._scanDoneEvent.set()  # always set completion signal
-
-                # best-effort done event for normal path
                 done_item = ("done", None, self._scanResultBuffer, None, None)
                 for _ in range(20):
                     try:
@@ -1195,28 +740,6 @@ class GamePicker:
             self._activePlatform = None
             self._platformFoundCounts = {p: 0 for p in self.platformOrder}
 
-            # clear stale queue entries
-            try:
-                while True:
-                    self.scanQueue.get_nowait()
-            except queue.Empty:
-                pass
-
-            self.scanProgress["value"] = 0
-            self.results.config(text="Scanning...")
-            self.scanStatus.set("Starting scan...")
-            scanButton.config(state="disabled")
-            if self.scanActive:
-                return
-
-            self.scanActive = True
-            self.scanStartedAt = t.time()
-            self._scanDoneEvent.clear()
-            self._scanResultBuffer = []
-            self._activePlatform = None
-            self._platformFoundCounts = {p: 0 for p in self.platformOrder}
-
-            # clear stale queue entries
             try:
                 while True:
                     self.scanQueue.get_nowait()
@@ -1241,18 +764,6 @@ class GamePicker:
                 daemon=True
             ).start()
             ui.after(100, pump_scan_updates)
-            for platform in self.platformOrder:
-                if platform in self.platformStatusVars:
-                    self.platformStatusVars[platform].set(
-                        f"{self._platformLabel(platform)}: queued"
-                    )
-
-            threading.Thread(
-                target=scan_worker,
-                args=(list(self.platformOrder),),
-                daemon=True
-            ).start()
-            ui.after(100, pump_scan_updates)
 
         def random_launch():
             if not self.masterGameList:
@@ -1261,26 +772,13 @@ class GamePicker:
             game = self.randomGame()
             if not game:
                 return
-            game = self.randomGame()
-            if not game:
-                return
             self.results.config(text=f"Selected: {game['name']}")
-            if messagebox.askyesno("Confirm Launch",
-                                   f"Launch {game['name']}?"):
-            if messagebox.askyesno("Confirm Launch",
-                                   f"Launch {game['name']}?"):
+            if messagebox.askyesno("Confirm Launch", f"Launch {game['name']}?"):
                 self.launch_game(game)
 
         scanButton = ttk.Button(frame, text="Scan Games", command=scan_games)
         scanButton.grid(column=0, row=1)
 
-        scanButton = ttk.Button(frame, text="Scan Games", command=scan_games)
-        scanButton.grid(column=0, row=1)
-
-        ttk.Button(frame, text="Pick a random game",
-                   command=random_launch).grid(column=0, row=6)
-        ttk.Button(frame, text="Quit",
-                   command=ui.destroy).grid(column=1, row=6)
         ttk.Button(frame, text="Pick a random game",
                    command=random_launch).grid(column=0, row=6)
         ttk.Button(frame, text="Quit",
@@ -1289,7 +787,5 @@ class GamePicker:
         ui.mainloop()
 
 
-
 if __name__ == "__main__":
-    GamePicker().UI()
     GamePicker().UI()
