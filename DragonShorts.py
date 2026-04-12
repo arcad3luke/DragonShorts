@@ -2,6 +2,7 @@ import os
 import sys
 import queue
 import random
+import sqlite3 as sqlite
 import subprocess
 import threading
 import contextlib
@@ -810,6 +811,7 @@ class GamePicker:
                    command=ui.destroy).grid(column=1, row=6)
 
         ui.mainloop()
+
 
 
 if __name__ == "__main__":
