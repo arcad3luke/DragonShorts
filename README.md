@@ -4,74 +4,78 @@
 
 # DragonShorts
 
-A small Windows utility that scans your Steam libraries, finds installed games, pulls metadata, grabs icons, and builds clean desktop shortcuts. It also sorts games into folders (Co-op, Multiplayer, Singleplayer, Unsorted) and creates a Favorites folder based on your most recently played titles.
+DragonShorts is a Windows utility that scans installed games across major launchers and helps pick something to play.
 
-This started as a personal quality-of-life tool and grew into something genuinely useful, so I’m sharing it here.
+## Features
 
-## What it does
-- Detects all Steam library folders  
-- Reads each game’s appmanifest files  
-- Finds the correct executable  
-- Resolves icons (renames Steam’s hashed icons or downloads header images)  
-- Creates `.lnk` shortcuts with proper working directories and icons  
-- Sorts shortcuts into category folders  
-- Cleans up duplicates  
-- Builds a Favorites folder (top 10 most recently played games)  
-- Shows a simple splash screen with progress updates  
+- Scans:
+  - Steam
+  - Battle.net
+  - Epic Games
+  - Ubisoft
+  - Xbox
+- Platform-specific detection where available
+- Filesystem fallback scanning
+- Executable resolution for non-Steam titles
+- UI progress:
+  - Per-platform status
+  - Overall progress bar
+- Cross-scanner deduplication
+- Random game picker
+- Launch support:
+  - Steam via `steam://rungameid/...`
+  - Non-Steam via resolved `.exe`
 
-## How to use it
+## Platform Notes
 
-### Option 1: Download the executable
-Grab the latest release from the Releases page and run it. No installation required.
+### Steam
+- Uses Steam scanner module when available
+- Falls back to filesystem scanning when needed
 
-### Option 2: Run from source
-Requires Python 3.10+.
+### Battle.net
+- Uses `product.db` discovery
+- Falls back to registry install discovery
+- Resolves executable candidates from install folders
 
-```bash
-pip install -r requirements.txt
-python steam_icon_grabber.py
-```
+### Epic Games
+- Reads manifests from:
+  - `C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests`
+  - `C:\ProgramData\Epic\UnrealEngineLauncher\Data\Manifests`
+- Falls back to filesystem scanning when needed
 
-## Building the executable
-Run this inside your virtual environment:
-
-```bash
-pyinstaller --onefile --noconsole ^
-    --icon=launcher.ico ^
-    --add-data "launcher.ico;." ^
-    --hidden-import=vdf --hidden-import=vdf.vdf ^
-    steam_icon_grabber.py
-```
-
-The finished executable will be in `dist/`.
+### Ubisoft / Xbox
+- Uses filesystem/path-based scanning
 
 ## Requirements
-- Windows 10 or 11  
-- Steam installed  
-- Python 3.10+ (only if running from source)
 
-Python modules:
-- vdf  
-- requests  
-- pywin32  
+- Windows 10/11
+- Python 3.10+ (source run only)
 
-## Project structure
-```
-steam_icon_grabber.py
-launcher.ico
-README.md
-requirements.txt
-LICENSE
+## Run From Source
+
+```powershell
+pip install -r requirements.txt
+python DragonShorts.py
 ```
 
-## Notes
-- Only supports Windows because it relies on `.lnk` shortcuts.  
-- Some games don’t expose category metadata, so they fall into “Unsorted.”  
-- If Steam changes their manifest format, this may need updates.  
+## Build (PyInstaller, onefile)
 
-## Contributing
-If you want to improve sorting rules, add new categories, or clean up the code, feel free to open a PR or issue.
+```powershell
+cd "C:\Users\arcad\OneDrive\Documents\code\DragonShortsGH"
+Remove-Item .\build,.\dist -Recurse -Force -ErrorAction SilentlyContinue
+pyinstaller --noconfirm --clean --onefile --noconsole --name DragonShorts `
+  --paths "C:\Users\arcad\OneDrive\Documents\code\DragonShortsGH" `
+  --hidden-import "scanners" `
+  --hidden-import "scanners.steam" `
+  --hidden-import "scanners.epic" `
+  --hidden-import "scanners.battlenet" `
+  --add-data "scanners;scanners" `
+  DragonShorts.py
+```
 
-## License
+## Logging
 
-MIT License.
+- Debug scan logging is written to:
+  - `%TEMP%\DragonShorts_scan.log`
+- For release builds, disable logging in code:
+  - `LOG_ENABLED = False`
