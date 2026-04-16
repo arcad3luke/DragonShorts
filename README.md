@@ -111,7 +111,7 @@ python DragonShorts.py
 ## Build (PyInstaller, onefile)
 
 ```powershell
-cd "C:\Users\arcad\OneDrive\Documents\code\DragonShortsGH"
+cd "DragonShortsGH"
 Remove-Item .\build,.\dist -Recurse -Force -ErrorAction SilentlyContinue
 pyinstaller --noconfirm --clean --onefile --noconsole --name DragonShorts `
   --paths "DragonShortsGH" `
