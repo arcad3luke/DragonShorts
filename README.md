@@ -54,56 +54,6 @@ DragonShorts is a Windows utility that scans installed games across major launch
 ## Run From Source
 
 ```powershell
-DragonShorts is a Windows utility that scans installed games across major launchers and helps pick something to play.
-
-## Features
-
-- Scans:
-  - Steam
-  - Battle.net
-  - Epic Games
-  - Ubisoft
-  - Xbox
-- Platform-specific detection where available
-- Filesystem fallback scanning
-- Executable resolution for non-Steam titles
-- UI progress:
-  - Per-platform status
-  - Overall progress bar
-- Cross-scanner deduplication
-- Random game picker
-- Launch support:
-  - Steam via `steam://rungameid/...`
-  - Non-Steam via resolved `.exe`
-
-## Platform Notes
-
-### Steam
-- Uses Steam scanner module when available
-- Falls back to filesystem scanning when needed
-
-### Battle.net
-- Uses `product.db` discovery
-- Falls back to registry install discovery
-- Resolves executable candidates from install folders
-
-### Epic Games
-- Reads manifests from:
-  - `C:\ProgramData\Epic\EpicGamesLauncher\Data\Manifests`
-  - `C:\ProgramData\Epic\UnrealEngineLauncher\Data\Manifests`
-- Falls back to filesystem scanning when needed
-
-### Ubisoft / Xbox
-- Uses filesystem/path-based scanning
-
-## Requirements
-
-- Windows 10/11
-- Python 3.10+ (source run only)
-
-## Run From Source
-
-```powershell
 pip install -r requirements.txt
 python DragonShorts.py
 ```
