@@ -51,7 +51,7 @@ def _progress_done(msg, start_time=None):
     try:
         sys.stdout.write(f"\r[bnet] {msg + suffix:<{_TERM_WIDTH}}\n")
         sys.stdout.flush()
-    except Exception:
+    except IOError:
         return
 
 
@@ -61,7 +61,7 @@ class BattleNetScanner:
         self.debug = debug
         self.progress = progress
         self._last_progress_time = 0.0
-        self.max_exe_workers = 4  # keep small; higher can hurt on HDDs
+        self.max_exe_workers = 6  # keep small; higher can hurt on HDDs
         self.resolve_phase_timeout_s = 90   # hard cap for exe-resolution phase
         self.find_exe_max_depth = 4         # prevent deep recursive stalls
 
@@ -105,9 +105,9 @@ class BattleNetScanner:
     def _emit_detail(self, message):
         if self.progress:
             try:
-                self.progress.update_spinner("Scanning Battle.net", message)
+                self.progress.update_spinner(message)
                 return
-            except Exception:
+            except IOError:
                 pass
         _progress_done(message)
 
@@ -116,7 +116,7 @@ class BattleNetScanner:
             try:
                 self.progress.update_bar("Scanning Battle.net", current, total)
                 return
-            except Exception:
+            except IOError:
                 pass
         _progress_spinner(message, time.monotonic())
 
@@ -185,7 +185,7 @@ class BattleNetScanner:
         except (OSError, PermissionError):
             return
 
-    def _probe_product_db_files(self, max_hits=200):
+    def _probe_product_db_files(self, max_hits=50):
         hits = 0
         for drive in self._iter_candidate_drives():
             for current_root, dirs, files in self._safe_walk(drive):
@@ -237,7 +237,7 @@ class BattleNetScanner:
                 if "product_install" in [t.lower() for t in tables]:
                     return True
 
-        except Exception:
+        except FileNotFoundError:
             return False
 
         return False
@@ -310,7 +310,7 @@ class BattleNetScanner:
                     continue
 
         if not candidates:
-            _progress_done("No valid product*.db found — using fallbacks.", t0)
+            _progress_done("No valid product.db found — using fallbacks.", t0)
             if self.debug:
                 self._probe_product_db_files()
             return None
@@ -574,7 +574,7 @@ class BattleNetScanner:
 
                     try:
                         game = fut.result()
-                    except Exception:
+                    except IOError:
                         game = None
 
                     if not game:

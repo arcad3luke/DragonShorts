@@ -1,17 +1,14 @@
+import io
 import os
-import sys
 import queue
 import random
-import sqlite3 as sqlite
 import subprocess
-import threading
-import contextlib
-import io
-import time as t
+import sys
 import tempfile
+import threading
+import time as t
 import traceback
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from tkinter import *
 from tkinter import messagebox
 from tkinter import ttk
@@ -28,17 +25,17 @@ if _base not in sys.path:
 # ── static scanner imports ────────────────────────────────────────────────────
 try:
     from scanners.steam import scanForGames as steam_scan_for_games
-except Exception:
+except ModuleNotFoundError:
     steam_scan_for_games = None
 
 try:
     from scanners.epic import scanForGames as epic_scan_for_games
-except Exception:
+except ModuleNotFoundError:
     epic_scan_for_games = None
 
 try:
     from scanners.battlenet import BattleNetScanner
-except Exception:
+except ModuleNotFoundError:
     BattleNetScanner = None
 
 
@@ -46,10 +43,10 @@ except Exception:
 
 PLATFORM_ORDER = ["steam", "battle.net", "epic games", "ubisoft", "xbox"]
 
-SCAN_MAX_WORKERS = 1
+SCAN_MAX_WORKERS = 4
 SCAN_UI_QUEUE_MAX = 1000
 SCAN_HARD_CAP_SECONDS = 180
-LOG_ENABLED = False
+LOG_ENABLED = True
 LOG_FILE = os.path.join(tempfile.gettempdir(), "DragonShorts_scan.log")
 
 PLATFORM_LABELS = {
@@ -62,7 +59,7 @@ PLATFORM_LABELS = {
 
 SCANNER_TIMEOUT_BY_PLATFORM = {
     # idle timeout seconds (not wall-clock runtime)
-    "steam":      30,
+    "steam":      10,
     "battle.net": 90,
     "epic games": 30,
     "ubisoft":    30,
@@ -88,6 +85,7 @@ PLATFORM_ROOT_MAP = {
         r"Program Files (x86)\Ubisoft\Ubisoft Game Launcher\games",
         r"Program Files\Ubisoft\Ubisoft Game Launcher\games",
         r"Ubisoft\Ubisoft Game Launcher\games",
+        r"Ubisoft Game Launcher\games"
     ],
     "xbox": [
         r"XboxGames",
@@ -95,10 +93,26 @@ PLATFORM_ROOT_MAP = {
     ],
 }
 
+STEAM_IGNORE_APPIDS = {
+    "228980",   # Steamworks Common Redistributables
+}
+
+STEAM_IGNORE_NAME_KEYWORDS = {
+    "redistributable",
+    "runtime",
+    "sdk",
+    "tool",
+    "server",
+    "proton",
+    "steamvr",
+}
+
+
 EXE_BLACKLIST = {
     "crash", "report", "bug", "updater", "helper",
     "telemetry", "anti", "cheat", "bssndrpt",
     "unitycrash", "unrealcrash", "setup", "install",
+    "steamworks"
 }
 
 # paths that are never game folders
@@ -121,7 +135,7 @@ WALK_SKIP_DIRS = {
 }
 
 # scanners that already resolved their exe — skip re-validation
-TRUSTED_PLATFORMS = {"steam", "battle.net", "epic games"}
+TRUSTED_PLATFORMS = {"steam", "battle.net", "epic games", "ubisoft", "Xbox"}
 
 
 # ── progress helpers ──────────────────────────────────────────────────────────
@@ -138,7 +152,7 @@ class ScanProgressReporter:
     def start_phase(self, label):
         self._emit("detail", label)
 
-    def update_spinner(self, label, detail="", interval=0.1):
+    def update_spinner(self, label, detail=""):
         self._emit("detail", f"{label} | {detail}" if detail else label)
 
     def update_bar(self, label, current, total):
@@ -162,16 +176,31 @@ class ScannerOutputBridge(io.TextIOBase):
     def write(self, text):
         if not text:
             return 0
+
         self._buf += text.replace("\r", "\n")
-        while "\n" in self._buf:
-            line, self._buf = self._buf.split("\n", 1)
+
+        # Hard cap to prevent runaway memory growth
+        if len(self._buf) > 10_000_000:  # 10MB
+            self._buf = self._buf[-1_000_000:]  # keep last 1MB
+
+        while True:
+            idx = self._buf.find("\n")
+            if idx == -1:
+                break
+
+            line = self._buf[:idx]
+            self._buf = self._buf[idx + 1:]
+
             line = line.strip()
             if not line:
                 continue
+
             if line.startswith("[bnet] "):
                 line = line[7:].strip()
+
             if self.callback:
                 self.callback("detail", self.platform, line, None, None)
+
         return len(text)
 
     def flush(self):
@@ -209,8 +238,9 @@ class GamePicker:
             ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with open(LOG_FILE, "a", encoding="utf-8") as f:
                 f.write(f"[{ts}] {msg}\n")
-        except Exception:
-            pass
+        except FileNotFoundError as e:
+            print(e)
+            # pass - Make it so errors are output.
 
     def _scanDrives(self):
         return [
@@ -277,7 +307,7 @@ class GamePicker:
                 return True
 
             return False
-        except Exception:
+        except FileNotFoundError:
             return False
 
     def _iterPlatformRoots(self, platform):
@@ -439,10 +469,26 @@ class GamePicker:
             if steam_scan_for_games:
                 try:
                     _root, _libs, games = steam_scan_for_games()
-                    reporter.finish_phase("Scanning Steam", f"{len(games)} game(s)")
-                    self._log(f"steam scanner: success ({len(games)} games)")
+
+                    # Filter out redistributables, runtimes, SDKs, tools, etc.
+                    filtered = []
+                    for g in games:
+                        appid = str(g.get("appid", ""))
+                        name = g.get("name", "").lower()
+
+                        if appid in STEAM_IGNORE_APPIDS:
+                            continue
+
+                        if any(kw in name for kw in STEAM_IGNORE_NAME_KEYWORDS):
+                            continue
+
+                        filtered.append(g)
+
+                    games = filtered
                     return games
-                except Exception:
+
+                except FileNotFoundError as e:
+                    self._log(e)
                     pass
             return self._scanPlatformFilesystem(platform, reporter)
 
@@ -458,8 +504,8 @@ class GamePicker:
                 reporter.finish_phase("Scanning Battle.net", f"{len(games)} game(s)")
                 self._log(f"battle.net scanner: success ({len(games)} games)")
                 return games
-            except Exception:
-                self._log("battle.net scanner: exception\n" + traceback.format_exc())
+            except FileNotFoundError as e:
+                self._log(f"battle.net scanner: exception:\n{e}" + traceback.format_exc())
                 return []
 
         if platform == "epic games":
@@ -469,7 +515,8 @@ class GamePicker:
                     games = epic_scan_for_games()
                     reporter.finish_phase("Scanning Epic Games", f"{len(games) if games else 0} game(s)")
                     return games or []
-                except Exception:
+                except FileNotFoundError as e:
+                    self._log(e)
                     pass
             return self._scanPlatformFilesystem(platform, reporter)
 
@@ -775,6 +822,12 @@ class GamePicker:
             self.results.config(text=f"Selected: {game['name']}")
             if messagebox.askyesno("Confirm Launch", f"Launch {game['name']}?"):
                 self.launch_game(game)
+                return None
+            else:
+                try:
+                    self.masterGameList.remove(game)
+                except ValueError:
+                    pass
 
         scanButton = ttk.Button(frame, text="Scan Games", command=scan_games)
         scanButton.grid(column=0, row=1)
